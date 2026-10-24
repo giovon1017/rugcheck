@@ -1,17 +1,64 @@
-<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Memecoin Rug Checker</title>
-<style>body{font-family:system-ui;background:#0e1117;color:#e6e6e6;max-width:760px;margin:auto;padding:24px}input,select,button{font-size:16px;padding:10px;border-radius:8px;border:1px solid #333;background:#161b22;color:#eee}input{width:100%;box-sizing:border-box;margin:8px 0}button{background:#6c5ce7;border:0;cursor:pointer}.card{background:#161b22;border-radius:12px;padding:18px;margin-top:18px}.score{font-size:48px;font-weight:700}.v{font-size:22px;font-weight:600}li{margin:6px 0}.muted{color:#888;font-size:13px}</style></head><body>
-<h1>🪙 Memecoin Rug Checker</h1><p class=muted>Paste a Solana mint or EVM (Ethereum/Base/BSC) contract address.</p>
-<input id=a placeholder="Token address"><select id=c><option value="">EVM chain: auto-detect</option><option>ethereum</option><option>base</option><option>bsc</option></select> <button onclick=go()>Check</button>
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>RUGCHECK // Memecoin Scanner</title>
+<link rel=preconnect href=https://fonts.googleapis.com><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel=stylesheet>
+<style>
+:root{--c:#00f0ff;--m:#ff2bd6;--bg:#05060a;--glass:rgba(16,22,36,.55);--line:rgba(0,240,255,.18);--txt:#e8f6ff;--mut:#7f8ea8}
+*{box-sizing:border-box}html,body{margin:0}
+body{font-family:'Space Grotesk',system-ui;color:var(--txt);min-height:100vh;background:radial-gradient(900px 500px at 10% -10%,rgba(0,240,255,.16),transparent 60%),radial-gradient(800px 500px at 110% 10%,rgba(255,43,214,.14),transparent 60%),var(--bg);overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:40px 40px;opacity:.25;mask-image:radial-gradient(ellipse at 50% 0,#000 30%,transparent 75%)}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+.wrap{position:relative;max-width:720px;margin:auto;padding:28px 18px 60px}
+.brand{font-family:Orbitron;font-weight:900;font-size:clamp(26px,7vw,40px);letter-spacing:.08em;margin:0;background:linear-gradient(90deg,var(--c),var(--m));-webkit-background-clip:text;color:transparent;filter:drop-shadow(0 0 14px rgba(0,240,255,.35))}
+.tag{font-family:'JetBrains Mono';font-size:12px;color:var(--mut);letter-spacing:.12em;text-transform:uppercase;margin:6px 0 22px}.tag b{color:var(--c)}
+.glass{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:18px;padding:18px;position:relative;box-shadow:0 0 0 1px rgba(255,43,214,.05),0 20px 50px rgba(0,0,0,.45)}
+.glass:before{content:"";position:absolute;top:-1px;left:18px;width:60px;height:2px;background:linear-gradient(90deg,var(--c),transparent);border-radius:2px}
+.lbl{font-family:Orbitron;font-size:11px;letter-spacing:.2em;color:var(--c);text-transform:uppercase;margin-bottom:10px}
+input,select{width:100%;font:15px 'JetBrains Mono';color:var(--txt);background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:12px;padding:14px;outline:none;transition:.2s}
+input:focus,select:focus{border-color:var(--c);box-shadow:0 0 0 3px rgba(0,240,255,.15),0 0 20px rgba(0,240,255,.2)}
+.row{display:flex;gap:10px;margin-top:10px}select{flex:1}
+button{font-family:Orbitron;font-weight:700;letter-spacing:.14em;font-size:14px;color:#05060a;border:0;border-radius:12px;padding:14px 22px;cursor:pointer;background:linear-gradient(90deg,var(--c),var(--m));box-shadow:0 0 24px rgba(0,240,255,.35);transition:.2s}
+button:hover{transform:translateY(-1px);box-shadow:0 0 34px rgba(255,43,214,.45)}button:disabled{opacity:.6}
+#out{margin-top:20px;display:grid;gap:16px}
+.scan{text-align:center;padding:34px 18px;overflow:hidden}.scan .bar{position:absolute;left:0;right:0;height:60px;top:-60px;background:linear-gradient(180deg,transparent,rgba(0,240,255,.25),transparent);animation:sweep 1.4s linear infinite}
+.scan .t{font-family:Orbitron;letter-spacing:.3em;color:var(--c);animation:blink 1s steps(2) infinite}.scan .s{font-family:'JetBrains Mono';font-size:12px;color:var(--mut);margin-top:8px}
+@keyframes sweep{to{top:100%}}@keyframes blink{50%{opacity:.4}}
+.hero{display:flex;flex-direction:column;align-items:center;text-align:center}
+.tname{font-family:Orbitron;font-weight:700;font-size:20px;letter-spacing:.06em}.addr{font-family:'JetBrains Mono';font-size:11px;color:var(--mut);word-break:break-all;margin-top:4px}
+.gauge{position:relative;width:200px;height:200px;margin:18px 0 10px}.gauge svg{transform:rotate(-90deg);filter:drop-shadow(0 0 10px var(--k))}
+.gauge .ring{transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)}.gauge .spin{position:absolute;inset:-8px;border-radius:50%;border:1px dashed rgba(0,240,255,.35);animation:rot 18s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.gauge .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.gauge .n{font-family:Orbitron;font-weight:900;font-size:56px;color:var(--k);text-shadow:0 0 18px var(--k)}.gauge .u{font-family:'JetBrains Mono';font-size:11px;color:var(--mut);letter-spacing:.2em}
+.badge{font-family:Orbitron;font-weight:700;letter-spacing:.16em;text-transform:uppercase;padding:8px 18px;border-radius:999px;color:var(--k);border:1px solid var(--k);background:color-mix(in srgb,var(--k) 12%,transparent);box-shadow:0 0 18px color-mix(in srgb,var(--k) 40%,transparent)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:12px;padding:12px}.stat .k{font-size:10px;font-family:Orbitron;letter-spacing:.15em;color:var(--mut)}.stat .v{font-family:'JetBrains Mono';font-weight:600;font-size:15px;margin-top:6px}
+a{color:var(--c)}.lnk{display:inline-block;margin-top:12px;font-family:'JetBrains Mono';font-size:13px}
+ul{list-style:none;padding:0;margin:0}li{display:flex;gap:10px;padding:10px 0;border-top:1px solid rgba(255,255,255,.05);line-height:1.45;font-size:14.5px}li:first-child{border-top:0}
+.ic{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:700}.bad .ic{background:rgba(255,59,92,.15);color:#ff3b5c;box-shadow:0 0 10px rgba(255,59,92,.3)}.ok .ic{background:rgba(0,255,163,.12);color:#00ffa3;box-shadow:0 0 10px rgba(0,255,163,.25)}
+.bad .lbl{color:#ff3b5c}.ok .lbl{color:#00ffa3}
+.foot{font-family:'JetBrains Mono';font-size:11px;color:var(--mut)}.warn{color:#ffd23f;font-size:13px;margin-top:10px}
+@media(max-width:480px){.stats{grid-template-columns:1fr 1fr}.row{flex-direction:column}}
+</style></head><body><div class=wrap>
+<h1 class=brand>RUGCHECK</h1><div class=tag><b>//</b> memecoin threat scanner · solana · eth · base · bsc</div>
+<div class=glass><div class=lbl>Target contract</div>
+<input id=a placeholder="Paste token address…" autocomplete=off spellcheck=false>
+<div class=row><select id=c><option value="">EVM chain: auto-detect</option><option>ethereum</option><option>base</option><option>bsc</option></select><button id=go onclick=go()>SCAN</button></div></div>
 <div id=out></div>
+<p class=warn>⚠ Not financial advice. Automated heuristic scan — always DYOR.</p></div>
 <script>
-const col=v=>({'Likely Legit':'#2ecc71','Caution':'#f1c40f','High Risk':'#e67e22','Likely Scam':'#e74c3c'})[v];
-const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
-async function go(){const o=document.getElementById('out');o.innerHTML='<div class=card>Checking…</div>';
-const r=await (await fetch('/api/check?address='+encodeURIComponent(a.value)+'&chain='+c.value)).json();
-if(r.error){o.innerHTML='<div class=card>'+esc(r.error)+'</div>';return}
-const m=r.market,n=(r.extra&&r.extra.name)||(m&&m.name)||'';
-o.innerHTML=`<div class=card><div>${esc(n)} ${m?'('+esc(m.symbol)+')':''} · ${r.chain}</div><div class=score style="color:${col(r.verdict)}">${r.score}/100 risk</div><div class=v style="color:${col(r.verdict)}">${r.verdict}</div>
-${m?`<p class=muted>Liquidity $${Math.round(m.liquidityUsd).toLocaleString()} · 24h vol $${Math.round(m.volume24h).toLocaleString()} · Age ${m.ageDays==null?'?':m.ageDays.toFixed(0)+' days'} · <a style="color:#9b8cff" href="${m.url}" target=_blank>DexScreener</a></p>`:''}</div>
-<div class=card><h3>🚩 Red flags</h3><ul>${r.flags.map(f=>'<li>'+esc(f)+'</li>').join('')||'<li>None found</li>'}</ul><h3>✅ Good signs</h3><ul>${r.good.map(f=>'<li>'+esc(f)+'</li>').join('')}</ul>
-<p class=muted>Data sources: ${esc(Object.entries(r.sources).map(([k,v])=>k+': '+v).join(' · '))}</p><p class=muted>⚠️ ${esc(r.disclaimer)}</p></div>`}
+const col=v=>({'Likely Legit':'#00ffa3','Caution':'#ffd23f','High Risk':'#ff8a3d','Likely Scam':'#ff3b5c'})[v]||'#00f0ff';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+const usd=n=>n==null?'n/a':'$'+Math.round(n).toLocaleString();
+a.addEventListener('keydown',e=>e.key==='Enter'&&go());
+async function go(){const o=document.getElementById('out'),b=document.getElementById('go');b.disabled=true;
+o.innerHTML='<div class="glass scan"><div class=bar></div><div class=t>SCANNING</div><div class=s>querying on-chain security feeds…</div></div>';
+let r;try{r=await (await fetch('/api/check?address='+encodeURIComponent(a.value)+'&chain='+c.value)).json()}catch(e){r={error:'Network error'}}b.disabled=false;
+if(r.error){o.innerHTML='<div class=glass><div class=lbl style="color:#ff3b5c">Error</div>'+esc(r.error)+'</div>';return}
+const m=r.market,n=(r.extra&&r.extra.name)||(m&&m.name)||'Unknown token',k=col(r.verdict),R=84,C=2*Math.PI*R;
+o.innerHTML=`<div class="glass hero" style="--k:${k}"><div class=tname>${esc(n)} ${m?'<span style="color:var(--mut)">$'+esc(m.symbol)+'</span>':''}</div><div class=addr>${esc(r.chain)} :: ${esc(r.address)}</div>
+<div class=gauge><div class=spin></div><svg width=200 height=200><circle cx=100 cy=100 r=${R} stroke="rgba(255,255,255,.06)" stroke-width=12 fill=none /><circle class=ring cx=100 cy=100 r=${R} stroke="${k}" stroke-width=12 fill=none stroke-linecap=round stroke-dasharray="${C}" stroke-dashoffset="${C}" /></svg><div class=num><div class=n id=sn>0</div><div class=u>RISK / 100</div></div></div>
+<div class=badge>${esc(r.verdict)}</div></div>
+${m?`<div class=glass><div class=lbl>Market telemetry</div><div class=stats><div class=stat><div class=k>LIQUIDITY</div><div class=v>${usd(m.liquidityUsd)}</div></div><div class=stat><div class=k>24H VOL</div><div class=v>${usd(m.volume24h)}</div></div><div class=stat><div class=k>AGE</div><div class=v>${m.ageDays==null?'?':m.ageDays.toFixed(0)+'d'}</div></div></div><a class=lnk href="${esc(m.url)}" target=_blank>↗ open on DexScreener</a></div>`:''}
+<div class="glass bad"><div class=lbl>⚠ Red flags · ${r.flags.length}</div><ul>${r.flags.map(f=>'<li><span class=ic>!</span><span>'+esc(f)+'</span></li>').join('')||'<li>None found</li>'}</ul></div>
+<div class="glass ok"><div class=lbl>✓ Good signs · ${r.good.length}</div><ul>${r.good.map(f=>'<li><span class=ic>✓</span><span>'+esc(f)+'</span></li>').join('')||'<li>None</li>'}</ul></div>
+<div class=foot>SOURCES :: ${esc(Object.entries(r.sources).map(([k,v])=>k+'='+v).join(' · '))}<br>⚠ ${esc(r.disclaimer)}</div>`;
+requestAnimationFrame(()=>{o.querySelector('.ring').style.strokeDashoffset=C*(1-r.score/100)});
+let i=0,el=document.getElementById('sn'),t=setInterval(()=>{i=Math.min(r.score,i+Math.max(1,Math.ceil(r.score/30)));el.textContent=i;if(i>=r.score)clearInterval(t)},30)}
 </script></body></html>
