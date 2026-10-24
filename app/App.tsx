@@ -13,7 +13,7 @@ import { JetBrainsMono_400Regular, JetBrainsMono_600SemiBold } from '@expo-googl
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL || 'https://rugcheck-ud3r.onrender.com';
 
 type Market = { liquidityUsd: number; volume24h: number; ageDays: number | null; name: string; symbol: string; url: string } | null;
-type Result = { address: string; chain: string; score: number; verdict: string; flags: string[]; good: string[]; market: Market; extra: { name?: string; symbol?: string } | null; disclaimer: string; sources: Record<string, string>; error?: string };
+type Result = { address: string; chain: string; score: number; verdict: string; flags: string[]; good: string[]; market: Market; marketUnavailable?: boolean; extra: { name?: string; symbol?: string } | null; disclaimer: string; sources: Record<string, string>; error?: string };
 type HistoryItem = { address: string; name: string; score: number; verdict: string; chain: string; at: number };
 
 const CYAN = '#00f0ff', MAG = '#ff2bd6', MUTED = '#7f8ea8', LINE = 'rgba(0,240,255,0.18)';
@@ -135,6 +135,13 @@ export default function App() {
               <Text style={[{ color, fontFamily: F.h, letterSpacing: 3, fontSize: 15 }, glow(color, 8)]}>{result.verdict.toUpperCase()}</Text>
             </View>
           </Glass>
+          {result.marketUnavailable && !m ? (
+          <Glass style={{ marginTop: 14 }} accent="#ffd23f">
+            <Text style={s.lbl}>MARKET TELEMETRY</Text>
+            <Text style={[{ color: '#ffd23f', fontFamily: F.m, fontSize: 13, letterSpacing: 1 }, glow('#ffd23f', 8)]}>◌ MARKET DATA TEMPORARILY UNAVAILABLE</Text>
+            <Text style={[s.t, { marginTop: 6 }]}>DexScreener didn't respond (rate-limited). Liquidity/volume weren't scored — rescan in a minute.</Text>
+          </Glass>
+          ) : (
           <Glass style={{ marginTop: 14 }}>
             <Text style={s.lbl}>MARKET TELEMETRY</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -143,6 +150,7 @@ export default function App() {
             </View>
             {m?.url ? <Pressable onPress={() => Linking.openURL(m.url)}><Text style={[s.link, { marginTop: 12, fontFamily: F.m }]}>↗ open on DexScreener</Text></Pressable> : null}
           </Glass>
+          )}
           <Glass style={{ marginTop: 14 }} accent="#ff3b5c">
             <Text style={[s.lbl, { color: '#ff3b5c' }]}>⚠ RED FLAGS · {result.flags.length}</Text>
             {result.flags.length ? result.flags.map((f, i) => <Item key={i} text={f} bad />) : <Text style={s.t}>None found</Text>}

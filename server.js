@@ -2,6 +2,23 @@ const http=require('http'),fs=require('fs'),path=require('path');
 const PORT=process.env.PORT||3000;
 const CHAINS={ethereum:1,base:8453,bsc:56};
 async function j(url){try{const r=await fetch(url,{signal:AbortSignal.timeout(20000),headers:{'accept':'application/json'}});if(!r.ok)return{_err:`HTTP ${r.status}`};return await r.json();}catch(e){return{_err:String(e.message||e)}}}
+
+const DEX_CACHE=new Map(),DEX_TTL=3*60*1000;
+async function dexFetch(addr){
+  const k=addr.toLowerCase(),c=DEX_CACHE.get(k);
+  if(c&&Date.now()-c.t<DEX_TTL)return c.v;
+  if(process.env.DEX_FORCE_FAIL)return{_err:'HTTP 429 (forced)'};
+  let r;
+  for(let i=0;i<3;i++){
+    r=await j(`https://api.dexscreener.com/latest/dex/tokens/${addr}`);
+    const m=r._err&&/HTTP (\d+)/.exec(r._err);
+    if(!r._err){DEX_CACHE.set(k,{t:Date.now(),v:r});if(DEX_CACHE.size>500)DEX_CACHE.delete(DEX_CACHE.keys().next().value);return r;}
+    if(m&&!(m[1]==='429'||m[1][0]==='5'))return r;
+    if(i<2)await new Promise(z=>setTimeout(z,600*Math.pow(2,i)+Math.random()*300));
+  }
+  return r;
+}
+
 const fmt=n=>n==null?'n/a':'$'+Number(n).toLocaleString('en-US',{maximumFractionDigits:0});
 function dexSummary(dex,chain){
   let pairs=(dex&&dex.pairs)||[]; if(chain)pairs=pairs.filter(p=>p.chainId===chain);
@@ -11,7 +28,8 @@ function dexSummary(dex,chain){
   const top=pairs.sort((a,b)=>(b.liquidity?.usd||0)-(a.liquidity?.usd||0))[0];
   return {liquidityUsd:liq,volume24h:vol,ageDays:isFinite(created)?(Date.now()-created)/864e5:null,pairs:pairs.length,name:top.baseToken.name,symbol:top.baseToken.symbol,priceUsd:top.priceUsd,fdv:top.fdv,url:top.url,chains:[...new Set(((dex.pairs)||[]).map(p=>p.chainId))]};
 }
-function market(flags,d,add){
+function market(flags,d,add,dex){
+  if(dex&&dex._err)return;
   if(!d){add(25,'No trading pairs found on DexScreener — can\'t be bought/sold on a known DEX, or it\'s dead.');return;}
   if(d.liquidityUsd<10000)add(20,`Very low liquidity (${fmt(d.liquidityUsd)}) — tiny trades move the price a lot and it\'s easy to drain.`);
   else if(d.liquidityUsd<100000)add(8,`Modest liquidity (${fmt(d.liquidityUsd)}).`);
@@ -20,7 +38,7 @@ function market(flags,d,add){
 }
 function verdict(s){return s<=20?'Likely Legit':s<=45?'Caution':s<=70?'High Risk':'Likely Scam'}
 async function solana(addr){
-  const [rc,dex]=await Promise.all([j(`https://api.rugcheck.xyz/v1/tokens/${addr}/report`),j(`https://api.dexscreener.com/latest/dex/tokens/${addr}`)]);
+  const [rc,dex]=await Promise.all([j(`https://api.rugcheck.xyz/v1/tokens/${addr}/report`),dexFetch(addr)]);
   const flags=[],good=[];let score=0;const add=(p,m)=>{score+=p;flags.push(m)};
   const d=dexSummary(dex,'solana'),sources={rugcheck:rc._err||'ok',dexscreener:dex._err||'ok'};
   if(!rc._err){
@@ -41,11 +59,11 @@ async function solana(addr){
       if(r.level==='danger')add(10,`RugCheck: ${r.name} — ${r.description}`);else flags.push(`RugCheck note: ${r.name} — ${r.description}`);}
     if(rc.graphInsidersDetected>0)add(8,`RugCheck detected ${rc.graphInsidersDetected} linked insider wallets.`);
   } else add(10,'RugCheck report unavailable — score based on less data.');
-  market(flags,d,add);
-  return {chain:'solana',score:Math.min(100,Math.round(score)),flags,good,market:d,extra:rc._err?null:{rugcheckScoreNormalised:rc.score_normalised,holders:rc.totalHolders,name:rc.tokenMeta?.name,symbol:rc.tokenMeta?.symbol},sources};
+  market(flags,d,add,dex);
+  return {chain:'solana',score:Math.min(100,Math.round(score)),flags,good,market:d,marketUnavailable:!!dex._err,extra:rc._err?null:{rugcheckScoreNormalised:rc.score_normalised,holders:rc.totalHolders,name:rc.tokenMeta?.name,symbol:rc.tokenMeta?.symbol},sources};
 }
 async function evm(addr,want){
-  const dex=await j(`https://api.dexscreener.com/latest/dex/tokens/${addr}`);
+  const dex=await dexFetch(addr);
   let chain=want; if(!chain){const cs=(dex.pairs||[]).map(p=>p.chainId).filter(c=>CHAINS[c]);chain=cs[0]||'ethereum';}
   const id=CHAINS[chain];
   const [gp,hp]=await Promise.all([j(`https://api.gopluslabs.io/api/v1/token_security/${id}?contract_addresses=${addr}`),j(`https://api.honeypot.is/v2/IsHoneypot?address=${addr}&chainID=${id}`)]);
@@ -83,8 +101,8 @@ async function evm(addr,want){
     else if(hp.simulationSuccess)good.push(`honeypot.is sell simulation passed (buy tax ${(+hp.simulationResult.buyTax).toFixed(1)}%, sell tax ${(+hp.simulationResult.sellTax).toFixed(1)}%).`);
     for(const f of hp.flags||[])flags.push('honeypot.is: '+(f.description||f.flag||JSON.stringify(f)));
   }
-  const d=dexSummary(dex,chain);market(flags,d,add);
-  return {chain,score:Math.min(100,Math.round(score)),flags,good,market:d,extra:g?{name:g.token_name,symbol:g.token_symbol,holders:g.holder_count}:null,sources};
+  const d=dexSummary(dex,chain);market(flags,d,add,dex);
+  return {chain,score:Math.min(100,Math.round(score)),flags,good,market:d,marketUnavailable:!!dex._err,extra:g?{name:g.token_name,symbol:g.token_symbol,holders:g.holder_count}:null,sources};
 }
 async function analyze(addr,chain){
   addr=addr.trim();
