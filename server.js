@@ -4,15 +4,32 @@ const CHAINS={ethereum:1,base:8453,bsc:56};
 async function j(url){try{const r=await fetch(url,{signal:AbortSignal.timeout(20000),headers:{'accept':'application/json'}});if(!r.ok)return{_err:`HTTP ${r.status}`};return await r.json();}catch(e){return{_err:String(e.message||e)}}}
 
 const DEX_CACHE=new Map(),DEX_TTL=3*60*1000;
-async function dexFetch(addr){
+const GT_NET={solana:'solana',ethereum:'eth',base:'base',bsc:'bsc'};
+async function gtFetch(addr,chain){
+  if(process.env.GT_FORCE_FAIL)return{_err:'HTTP 429 (forced)'};
+  const r=await j(`https://api.geckoterminal.com/api/v2/networks/${GT_NET[chain]}/tokens/${addr}/pools?include=base_token,quote_token&page=1`);
+  if(r._err||!Array.isArray(r.data))return{_err:r._err||'bad response'};
+  const toks={};(r.included||[]).forEach(t=>{toks[t.id]=t.attributes||{}});
+  const me=toks[`${GT_NET[chain]}_${addr}`]||Object.values(toks).find(t=>(t.address||'').toLowerCase()===addr.toLowerCase())||{};
+  return{pairs:r.data.map(p=>{const a=p.attributes||{};return{chainId:chain,liquidity:{usd:Number(a.reserve_in_usd)||0},volume:{h24:Number(a.volume_usd&&a.volume_usd.h24)||0},pairCreatedAt:a.pool_created_at?Date.parse(a.pool_created_at):undefined,baseToken:{name:me.name,symbol:me.symbol,address:addr},priceUsd:a.base_token_price_usd,fdv:Number(a.fdv_usd)||undefined,url:`https://www.geckoterminal.com/${GT_NET[chain]}/pools/${a.address}`}})};
+}
+async function dexFetch(addr,nets){
   const k=addr.toLowerCase(),c=DEX_CACHE.get(k);
   if(c&&Date.now()-c.t<DEX_TTL)return c.v;
+  const ds=await dexScreener(addr);
+  if(!ds._err){ds._source='dexscreener';DEX_CACHE.set(k,{t:Date.now(),v:ds});if(DEX_CACHE.size>500)DEX_CACHE.delete(DEX_CACHE.keys().next().value);return ds;}
+  const gts=await Promise.all(nets.map(n=>gtFetch(addr,n)));
+  const pairs=gts.flatMap(g=>g.pairs||[]);
+  if(gts.some(g=>!g._err)){const v={pairs,_source:'geckoterminal',_dsErr:ds._err};DEX_CACHE.set(k,{t:Date.now(),v});return v;}
+  return{_err:`dexscreener ${ds._err}; geckoterminal ${gts.map(g=>g._err).join(',')}`};
+}
+async function dexScreener(addr){
   if(process.env.DEX_FORCE_FAIL)return{_err:'HTTP 429 (forced)'};
   let r;
   for(let i=0;i<3;i++){
     r=await j(`https://api.dexscreener.com/latest/dex/tokens/${addr}`);
     const m=r._err&&/HTTP (\d+)/.exec(r._err);
-    if(!r._err){DEX_CACHE.set(k,{t:Date.now(),v:r});if(DEX_CACHE.size>500)DEX_CACHE.delete(DEX_CACHE.keys().next().value);return r;}
+    if(!r._err)return r;
     if(m&&!(m[1]==='429'||m[1][0]==='5'))return r;
     if(i<2)await new Promise(z=>setTimeout(z,600*Math.pow(2,i)+Math.random()*300));
   }
@@ -38,9 +55,9 @@ function market(flags,d,add,dex){
 }
 function verdict(s){return s<=20?'Likely Legit':s<=45?'Caution':s<=70?'High Risk':'Likely Scam'}
 async function solana(addr){
-  const [rc,dex]=await Promise.all([j(`https://api.rugcheck.xyz/v1/tokens/${addr}/report`),dexFetch(addr)]);
+  const [rc,dex]=await Promise.all([j(`https://api.rugcheck.xyz/v1/tokens/${addr}/report`),dexFetch(addr,['solana'])]);
   const flags=[],good=[];let score=0;const add=(p,m)=>{score+=p;flags.push(m)};
-  const d=dexSummary(dex,'solana'),sources={rugcheck:rc._err||'ok',dexscreener:dex._err||'ok'};
+  const d=dexSummary(dex,'solana'),sources={rugcheck:rc._err||'ok',dexscreener:dex._err||(dex._dsErr||'ok'),market:dex._err?'unavailable':dex._source};
   if(!rc._err){
     if(rc.rugged)add(100,'RugCheck has marked this token as RUGGED.');
     if(rc.token?.mintAuthority)add(30,'Mint authority is still active — the dev can print unlimited new tokens and dump them.');else good.push('Mint authority revoked (no new tokens can be minted).');
@@ -63,12 +80,12 @@ async function solana(addr){
   return {chain:'solana',score:Math.min(100,Math.round(score)),flags,good,market:d,marketUnavailable:!!dex._err,extra:rc._err?null:{rugcheckScoreNormalised:rc.score_normalised,holders:rc.totalHolders,name:rc.tokenMeta?.name,symbol:rc.tokenMeta?.symbol},sources};
 }
 async function evm(addr,want){
-  const dex=await dexFetch(addr);
+  const dex=await dexFetch(addr,want&&GT_NET[want]?[want]:['ethereum','base','bsc']);
   let chain=want; if(!chain){const cs=(dex.pairs||[]).map(p=>p.chainId).filter(c=>CHAINS[c]);chain=cs[0]||'ethereum';}
   const id=CHAINS[chain];
   const [gp,hp]=await Promise.all([j(`https://api.gopluslabs.io/api/v1/token_security/${id}?contract_addresses=${addr}`),j(`https://api.honeypot.is/v2/IsHoneypot?address=${addr}&chainID=${id}`)]);
   const flags=[],good=[];let score=0;const add=(p,m)=>{score+=p;flags.push(m)};
-  const sources={goplus:gp._err||(gp.code===1?'ok':'code '+gp.code+' '+gp.message),honeypot:hp._err||'ok',dexscreener:dex._err||'ok'};
+  const sources={goplus:gp._err||(gp.code===1?'ok':'code '+gp.code+' '+gp.message),honeypot:hp._err||'ok',dexscreener:dex._err||(dex._dsErr||'ok'),market:dex._err?'unavailable':dex._source};
   const d0=dexSummary(dex,chain);const g=gp.result&&gp.result[addr.toLowerCase()];
   if(g){
     const t=v=>v==='1';const o=(g.owner_address||'').toLowerCase();const renounced=!o||/^0x0+$/.test(o)||o==='0x000000000000000000000000000000000000dead';const op=(p,m)=>renounced?flags.push('(Owner renounced, so low risk) '+m):add(p,m);

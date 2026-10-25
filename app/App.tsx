@@ -148,7 +148,7 @@ export default function App() {
               {[['LIQUIDITY', compact(m?.liquidityUsd)], ['24H VOL', compact(m?.volume24h)], ['AGE', m?.ageDays == null ? 'n/a' : `${m.ageDays.toFixed(0)}d`]].map(([k, v]) => (
                 <View key={k} style={s.stat}><Text style={s.statK}>{k}</Text><Text style={s.statV} numberOfLines={1} adjustsFontSizeToFit>{v}</Text></View>))}
             </View>
-            {m?.url ? <Pressable onPress={() => Linking.openURL(m.url)}><Text style={[s.link, { marginTop: 12, fontFamily: F.m }]}>↗ open on DexScreener</Text></Pressable> : null}
+            {m?.url ? <Pressable onPress={() => Linking.openURL(m.url)}><Text style={[s.link, { marginTop: 12, fontFamily: F.m }]}>↗ open on {result.sources.market === 'geckoterminal' ? 'GeckoTerminal' : 'DexScreener'}</Text></Pressable> : null}
           </Glass>
           )}
           <Glass style={{ marginTop: 14 }} accent="#ff3b5c">
