@@ -61,4 +61,4 @@ ${m?`<div class=glass><div class=lbl>Market telemetry</div><div class=stats><div
 <div class=foot>SOURCES :: ${esc(Object.entries(r.sources).map(([k,v])=>k+'='+v).join(' · '))}<br>⚠ ${esc(r.disclaimer)}</div>`;
 requestAnimationFrame(()=>{o.querySelector('.ring').style.strokeDashoffset=C*(1-r.score/100)});
 let i=0,el=document.getElementById('sn'),t=setInterval(()=>{i=Math.min(r.score,i+Math.max(1,Math.ceil(r.score/30)));el.textContent=i;if(i>=r.score)clearInterval(t)},30)}
-</script></body></html>
+</script><p style="text-align:center;font-size:12px;margin:24px 0"><a href="/privacy" style="color:#00f0ff">Privacy</a> · <a href="/terms" style="color:#00f0ff">Terms &amp; Disclaimer</a></p></body></html>

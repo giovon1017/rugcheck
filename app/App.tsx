@@ -10,7 +10,19 @@ import { SpaceGrotesk_400Regular, SpaceGrotesk_600SemiBold } from '@expo-google-
 import { JetBrainsMono_400Regular, JetBrainsMono_600SemiBold } from '@expo-google-fonts/jetbrains-mono';
 
 // Backend URL: set EXPO_PUBLIC_API_URL, or change it in the app (API server field).
-const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL || 'https://rugcheck-ud3r.onrender.com';
+const ENV_API = process.env.EXPO_PUBLIC_API_URL;
+const API = (ENV_API && ENV_API.startsWith('https://') ? ENV_API : 'https://rugcheck-ud3r.onrender.com').replace(/\/$/, '');
+const TIMEOUT_MS = 45000; // Render free tier can cold-start
+async function fetchWithTimeout(url: string, ms: number) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { signal: ctl.signal, headers: { accept: 'application/json' } }); } finally { clearTimeout(t); }
+}
+function friendlyError(e: any): string {
+  const msg = String(e?.message || e || '');
+  if (e?.name === 'AbortError' || /abort/i.test(msg)) return 'The scan timed out. The server may be waking up — please try again in a few seconds.';
+  if (/network request failed|failed to fetch|network/i.test(msg)) return "You appear to be offline or the server can't be reached. Check your connection and try again.";
+  return msg || 'Something went wrong. Please try again.';
+}
 
 type Market = { liquidityUsd: number; volume24h: number; ageDays: number | null; name: string; symbol: string; url: string } | null;
 type Result = { address: string; chain: string; score: number; verdict: string; flags: string[]; good: string[]; market: Market; marketUnavailable?: boolean; extra: { name?: string; symbol?: string } | null; disclaimer: string; sources: Record<string, string>; error?: string };
@@ -91,31 +103,34 @@ function Scanning() {
 
 export default function App() {
   const [fontsLoaded] = useFonts({ Orbitron_700Bold, Orbitron_900Black, SpaceGrotesk_400Regular, SpaceGrotesk_600SemiBold, JetBrainsMono_400Regular, JetBrainsMono_600SemiBold });
-  const [api, setApi] = useState(DEFAULT_API);
   const [addr, setAddr] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => { (async () => {
-    const h = await AsyncStorage.getItem('history'); if (h) setHistory(JSON.parse(h));
-    const a = await AsyncStorage.getItem('api'); if (a) setApi(a);
+    try { const h = await AsyncStorage.getItem('history'); if (h) { const p = JSON.parse(h); if (Array.isArray(p)) setHistory(p); } } catch { AsyncStorage.removeItem('history'); }
   })(); }, []);
 
   async function check(a = addr) {
-    const address = a.trim(); if (!address) return;
+    const address = a.trim(); if (!address || loading) return;
+    if (!/^(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(address)) { setErr('That doesn\'t look like a valid Solana or EVM (0x…) token address.'); return; }
     setLoading(true); setErr('');
     try {
-      const res = await fetch(`${api.replace(/\/$/, '')}/api/check?address=${encodeURIComponent(address)}`);
-      const r: Result = await res.json();
+      const url = `${API}/api/check?address=${encodeURIComponent(address)}`;
+      let res: Response;
+      try { res = await fetchWithTimeout(url, TIMEOUT_MS); }
+      catch (e1: any) { if (e1?.name === 'AbortError') throw e1; await new Promise(z => setTimeout(z, 1500)); res = await fetchWithTimeout(url, TIMEOUT_MS); }
+      let r: Result;
+      try { r = await res.json(); } catch { throw new Error(`Server error (${res.status}). Please try again shortly.`); }
+      if (!res.ok && !r?.error) throw new Error(`Server error (${res.status}). Please try again shortly.`);
       if (r.error) throw new Error(r.error);
       setResult(r);
       const item: HistoryItem = { address, name: r.extra?.symbol || r.market?.symbol || address.slice(0, 6), score: r.score, verdict: r.verdict, chain: r.chain, at: Date.now() };
       const h = [item, ...history.filter(x => x.address !== address)].slice(0, 20);
       setHistory(h); AsyncStorage.setItem('history', JSON.stringify(h));
-    } catch (e: any) { setErr(e?.message || 'Request failed — is the API URL reachable?'); }
+    } catch (e: any) { setErr(friendlyError(e)); }
     setLoading(false);
   }
 
@@ -191,8 +206,10 @@ export default function App() {
             <View style={{ alignItems: 'flex-end' }}><Text style={{ color: COLORS[h.verdict], fontFamily: F.hb, fontSize: 18 }}>{h.score}</Text><Text style={{ color: COLORS[h.verdict], fontFamily: F.m, fontSize: 10 }}>{h.verdict}</Text></View>
           </Pressable>))}
         {history.length ? <Pressable onPress={() => { setHistory([]); AsyncStorage.removeItem('history'); }}><Text style={[s.link, { marginTop: 10, fontSize: 12 }]}>CLEAR HISTORY</Text></Pressable> : null}
-        <Pressable onPress={() => setShowSettings(!showSettings)}><Text style={[s.link, { marginTop: 24, fontSize: 12 }]}>⚙ API SERVER</Text></Pressable>
-        {showSettings ? <TextInput style={s.input} value={api} autoCapitalize="none" autoCorrect={false} onChangeText={v => { setApi(v); AsyncStorage.setItem('api', v); }} /> : null}
+        <View style={{ flexDirection: 'row', gap: 18, marginTop: 24 }}>
+          <Pressable onPress={() => Linking.openURL(`${API}/privacy`)}><Text style={[s.link, { fontSize: 12 }]}>PRIVACY POLICY</Text></Pressable>
+          <Pressable onPress={() => Linking.openURL(`${API}/terms`)}><Text style={[s.link, { fontSize: 12 }]}>TERMS & DISCLAIMER</Text></Pressable>
+        </View>
         <Text style={s.disclaimer}>⚠ Not financial advice.</Text>
       </ScrollView>
     </SafeAreaView></Background>

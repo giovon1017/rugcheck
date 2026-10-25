@@ -131,6 +131,8 @@ async function analyze(addr,chain){
 }
 http.createServer(async(req,res)=>{
   const u=new URL(req.url,'http://x');
-  if(u.pathname==='/api/check'){const r=await analyze(u.searchParams.get('address')||'',u.searchParams.get('chain'));res.writeHead(r.error?400:200,{'content-type':'application/json','access-control-allow-origin':'*'});return res.end(JSON.stringify(r));}
+  if(u.pathname==='/privacy'||u.pathname==='/terms'){return fs.readFile(path.join(__dirname,'public',u.pathname.slice(1)+'.html'),(e,b)=>{res.writeHead(e?404:200,{'content-type':'text/html; charset=utf-8'});res.end(e?'Not found':b)});}
+  if(u.pathname==='/health'){res.writeHead(200,{'content-type':'text/plain'});return res.end('ok');}
+  if(u.pathname==='/api/check'){let r;try{r=await analyze(u.searchParams.get('address')||'',u.searchParams.get('chain'));}catch(e){res.writeHead(500,{'content-type':'application/json','access-control-allow-origin':'*'});return res.end(JSON.stringify({error:'Scan failed unexpectedly. Please try again.'}));}res.writeHead(r.error?400:200,{'content-type':'application/json','access-control-allow-origin':'*'});return res.end(JSON.stringify(r));}
   fs.readFile(path.join(__dirname,'public','index.html'),(e,b)=>{res.writeHead(200,{'content-type':'text/html'});res.end(b)});
 }).listen(PORT,()=>console.log('RugCheck app on http://localhost:'+PORT));
